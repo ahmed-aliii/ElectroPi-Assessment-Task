@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using TMS.Domain;
 
 namespace TMS.Infrastruture
 {
@@ -25,9 +26,6 @@ namespace TMS.Infrastruture
                 .WithOne(t => t.Project)
                 .HasForeignKey(t => t.ProjectId)
                 .OnDelete(DeleteBehavior.Cascade);
-
-            builder.Navigation(p => p.Tasks)
-                .UsePropertyAccessMode(PropertyAccessMode.Field);
         }
     }
 }

@@ -28,9 +28,6 @@ namespace TMS.Infrastruture
             builder.Property(t => t.ProjectId)
                 .IsRequired();
 
-            builder.Property(t => t.CreatedAt).IsRequired();
-            builder.Property(t => t.IsDeleted).HasDefaultValue(false);
-
             builder.HasIndex(t => t.ProjectId);
         }
     }
