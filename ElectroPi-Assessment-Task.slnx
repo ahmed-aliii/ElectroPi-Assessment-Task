@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="TMS.API/TMS.API.csproj" />
+  <Project Path="TMS.Application/TMS.Application.csproj" />
+  <Project Path="TMS.Domain/TMS.Domain.csproj" />
+  <Project Path="TMS.Infrastruture/TMS.Infrastructure.csproj" />
+</Solution>
