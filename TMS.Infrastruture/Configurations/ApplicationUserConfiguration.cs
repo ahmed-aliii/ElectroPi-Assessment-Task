@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using TMS.Domain;
 
-namespace TMS.Infrastruture
+namespace TMS.Infrastructure
 {
     public class ApplicationUserConfiguration : IEntityTypeConfiguration<ApplicationUser>
     {

@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using DomainTask = TMS.Domain.Task;
 
-namespace TMS.Infrastruture
+namespace TMS.Infrastructure
 {
     public class TaskConfiguration : IEntityTypeConfiguration<DomainTask>
     {

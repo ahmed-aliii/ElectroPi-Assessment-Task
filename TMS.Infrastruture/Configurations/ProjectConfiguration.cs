@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using TMS.Domain;
 
-namespace TMS.Infrastruture
+namespace TMS.Infrastructure
 {
     public class ProjectConfiguration : IEntityTypeConfiguration<Project>
     {

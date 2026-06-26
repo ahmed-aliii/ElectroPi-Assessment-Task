@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using TMS.Domain;
 
-namespace TMS.Infrastruture
+namespace TMS.Infrastructure
 {
     public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     {
@@ -37,9 +37,9 @@ namespace TMS.Infrastruture
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
-            builder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
-
             base.OnModelCreating(builder);
+
+            builder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
         }
 
         #endregion Fluent API

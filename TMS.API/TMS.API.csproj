@@ -30,8 +30,4 @@
     <ProjectReference Include="..\TMS.Infrastruture\TMS.Infrastructure.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Controllers\" />
-  </ItemGroup>
-
 </Project>

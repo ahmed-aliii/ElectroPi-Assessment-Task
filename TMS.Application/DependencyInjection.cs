@@ -42,13 +42,15 @@ namespace TMS.Application
             #endregion Mediator
 
             #region UseCases
-            //services.AddScoped<IRegisterUserUseCase, RegisterUserUseCase>();
-            //services.AddScoped<ILoginUseCase, LoginUseCase>();
-            //services.AddScoped<IRefreshTokenUseCase, RefreshTokenUseCase>();
+            services.AddScoped<IRegisterUserUseCase, RegisterUserUseCase>();
+            services.AddScoped<ILoginUseCase, LoginUseCase>();
+            services.AddScoped<IRefreshTokenUseCase, RefreshTokenUseCase>();
             #endregion
 
             #region GenericService
             services.AddScoped(typeof(IGenericService<>), typeof(GenericService<>));
+            services.AddScoped<IAuthService, AuthService>();
+
             #endregion
 
 

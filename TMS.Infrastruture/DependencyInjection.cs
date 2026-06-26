@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 using TMS.Application;
 using TMS.Domain;
 
-namespace TMS.Infrastruture
+namespace TMS.Infrastructure
 {
     public static class DependencyInjection
     {
@@ -28,52 +28,42 @@ namespace TMS.Infrastruture
 
             #region Repositories
             services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
-            //services.AddScoped<IUserRepository, UserRepository>();
+            services.AddScoped<IUserRepository, UserRepository>();
             #endregion
 
             #region Identity Services
 
             services.AddIdentity<ApplicationUser, IdentityRole>(options =>
             {
-                // -------------------
-                // Password settings
-                // -------------------
-                options.Password.RequireDigit = true;                // Must contain a number
-                options.Password.RequireLowercase = true;            // Must contain a lowercase letter
-                options.Password.RequireUppercase = true;            // Must contain an uppercase letter
-                options.Password.RequireNonAlphanumeric = true;     // Must contain a special character
-                options.Password.RequiredLength = 6;                // Minimum length
-                options.Password.RequiredUniqueChars = 1;           // Minimum unique characters
-                options.SignIn.RequireConfirmedEmail = true;        // Optional: require email confirmation
+               
+                options.Password.RequireDigit = true;                
+                options.Password.RequireLowercase = true;            
+                options.Password.RequireUppercase = true;            
+                options.Password.RequireNonAlphanumeric = true;     
+                options.Password.RequiredLength = 6;                
+                options.Password.RequiredUniqueChars = 1;          
+                options.SignIn.RequireConfirmedEmail = true;        
 
-                // -------------------
-                // User settings
-                // -------------------
-                options.User.RequireUniqueEmail = true;           // Email must be unique
+                options.User.RequireUniqueEmail = true;           
                 options.User.AllowedUserNameCharacters =
-                    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._@+"; // Allowed username chars
+                    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._@+"; 
 
-                // -------------------
-                // Lockout settings
-                // -------------------
-                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5); // Lockout duration
-                options.Lockout.MaxFailedAccessAttempts = 5;                       // Max failed attempts
-                options.Lockout.AllowedForNewUsers = true;                         // Lockout enabled for new users
+            
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5); 
+                options.Lockout.MaxFailedAccessAttempts = 5;                       
+                options.Lockout.AllowedForNewUsers = true;                         
 
-                // -------------------
-                // SignIn settings
-                // -------------------
-                options.SignIn.RequireConfirmedEmail = false;     // Require email confirmation
-                options.SignIn.RequireConfirmedPhoneNumber = false; // Require phone confirmation
+               
+                options.SignIn.RequireConfirmedEmail = false;     
+                options.SignIn.RequireConfirmedPhoneNumber = false; 
             })
             .AddEntityFrameworkStores<ApplicationDbContext>()
-            .AddDefaultTokenProviders(); // <-- THIS IS IMPORTANT
+            .AddDefaultTokenProviders(); 
 
             #endregion Identity Services
 
 
             #region Services
-            //services.AddScoped<IAuthService, AuthService>();
             #endregion
 
             return services;

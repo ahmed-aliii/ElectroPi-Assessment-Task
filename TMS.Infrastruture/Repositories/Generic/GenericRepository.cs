@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using TMS.Application;
 
-namespace TMS.Infrastruture
+namespace TMS.Infrastructure
 {
     public class GenericRepository<T> : IGenericRepository<T> where T : class
     {

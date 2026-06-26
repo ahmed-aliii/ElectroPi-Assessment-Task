@@ -2,8 +2,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using TMS.Application;
-using TMS.Infrastruture;
 using System.Text;
+using TMS.Infrastructure;
 
 
 namespace TMS.API

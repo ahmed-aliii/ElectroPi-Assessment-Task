@@ -56,6 +56,9 @@ namespace TMS.Domain
             RefreshTokenExpiryTime = expiryTime;
         }
 
+        public bool IsRefreshTokenValid(string refreshToken) =>
+            RefreshToken == refreshToken && RefreshTokenExpiryTime > DateTime.UtcNow;
+
         public void UpdateName(string firstName, string lastName)
         {
             if (string.IsNullOrWhiteSpace(firstName)) throw new ArgumentException("First name is required.");
