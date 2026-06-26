@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity;
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using TMS.Domain;
 
 namespace TMS.Application
@@ -11,14 +10,12 @@ namespace TMS.Application
 
     public class RefreshTokenUseCase : IRefreshTokenUseCase
     {
-        private readonly UserManager<ApplicationUser> _userManager;
+        private readonly IUserService _userService;
         private readonly IAuthService _authService;
 
-        public RefreshTokenUseCase(
-            UserManager<ApplicationUser> userManager,
-            IAuthService authService)
+        public RefreshTokenUseCase(IUserService userService, IAuthService authService)
         {
-            _userManager = userManager;
+            _userService = userService;
             _authService = authService;
         }
 
@@ -32,14 +29,15 @@ namespace TMS.Application
                 return ServiceResult<AuthResponse>.Unauthorized("Invalid access token.");
             }
 
-            var user = await _userManager.FindByEmailAsync(email);
+            var userResult = await _userService.GetByEmailAsync(email);
 
-            if (user == null || !user.IsRefreshTokenValid(request.RefreshToken))
+            if (!userResult.Success || userResult.Data is null ||
+                !userResult.Data.IsRefreshTokenValid(request.RefreshToken))
             {
                 return ServiceResult<AuthResponse>.Unauthorized("Invalid refresh token.");
             }
 
-            var authResponse = await _authService.BuildAuthResponseAsync(user);
+            var authResponse = await _authService.BuildAuthResponseAsync(userResult.Data);
             return ServiceResult<AuthResponse>.Ok(authResponse);
         }
     }

@@ -6,11 +6,8 @@ using TMS.Application.Features;
 
 namespace TMS.API.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
     [SwaggerTag("Authentication and Account Management")]
-    public class AuthController : ControllerBase
-    {
+    public class AuthController : ApiControllerBase    {
         private readonly IMediator _mediator;
 
         public AuthController(IMediator mediator)

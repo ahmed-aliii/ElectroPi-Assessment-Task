@@ -1,6 +1,9 @@
+using Asp.Versioning;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Swashbuckle.AspNetCore.SwaggerGen;
 using TMS.Application;
 using System.Text;
 using TMS.Infrastructure;
@@ -26,6 +29,9 @@ namespace TMS.API
                 // Register layers
                 builder.Services.AddApplicationService(configuration);
                 builder.Services.AddInfrastructureService(configuration);
+
+                builder.Services.AddHttpContextAccessor();
+                builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
                 #endregion Layers Registerations
 
@@ -59,6 +65,20 @@ namespace TMS.API
 
                 #region Controllers Service
 
+                builder.Services.AddApiVersioning(options =>
+                {
+                    options.DefaultApiVersion = new ApiVersion(1, 0);
+                    options.AssumeDefaultVersionWhenUnspecified = true;
+                    options.ReportApiVersions = true;
+                    options.ApiVersionReader = new UrlSegmentApiVersionReader();
+                })
+                .AddMvc()
+                .AddApiExplorer(options =>
+                {
+                    options.GroupNameFormat = "'v'VVV";
+                    options.SubstituteApiVersionInUrl = true;
+                });
+
                 builder.Services.AddControllers(options =>
                 {
                     options.Filters.Add<FluentValidationFilter>();
@@ -69,10 +89,10 @@ namespace TMS.API
                 #region Swagger Service
 
                 builder.Services.AddEndpointsApiExplorer();
+                builder.Services.AddTransient<IConfigureOptions<SwaggerGenOptions>, ConfigureSwaggerOptions>();
 
                 builder.Services.AddSwaggerGen(c =>
                 {
-                    c.SwaggerDoc("v1", new() { Title = "TMS API", Version = "v1" });
                     c.EnableAnnotations();
                     c.IgnoreObsoleteProperties();
 
@@ -149,8 +169,14 @@ namespace TMS.API
                     app.UseSwagger();
                     app.UseSwaggerUI(c =>
                     {
-                        c.SwaggerEndpoint("/swagger/v1/swagger.json", "SkyDream API V1");
-                        c.RoutePrefix = "swagger"; // Set Swagger UI at /swagger
+                        foreach (var description in app.DescribeApiVersions())
+                        {
+                            c.SwaggerEndpoint(
+                                $"/swagger/{description.GroupName}/swagger.json",
+                                $"TMS API {description.GroupName.ToUpperInvariant()}");
+                        }
+
+                        c.RoutePrefix = "swagger";
                     });
                 }
 
