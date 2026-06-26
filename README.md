@@ -290,6 +290,54 @@ One file per use case, validator, and command. Interface-based DI, domain factor
 
 ---
 
+## Testing
+
+All automated tests live under the top-level `tests` folder and mirror the production layers:
+
+```text
+tests/
+  TMS.Domain.Tests/
+  TMS.Application.Tests/
+  TMS.Infrastructure.Tests/
+  TMS.API.Tests/
+```
+
+Run from the repository root:
+
+```powershell
+dotnet restore
+```
+
+```powershell
+dotnet build ElectroPi-Assessment-Task.slnx
+```
+
+```powershell
+dotnet test ElectroPi-Assessment-Task.slnx
+```
+
+Run one test project:
+
+```powershell
+dotnet test tests/TMS.Application.Tests/TMS.Application.Tests.csproj
+```
+
+Filter by test class or name:
+
+```powershell
+dotnet test ElectroPi-Assessment-Task.slnx --filter FullyQualifiedName~CreateProjectUseCase
+```
+
+Collect coverage:
+
+```powershell
+dotnet test ElectroPi-Assessment-Task.slnx --collect:"XPlat Code Coverage"
+```
+
+The infrastructure and API tests use isolated SQLite in-memory databases, so local test runs do not require SQL Server.
+
+---
+
 ## Contact
 
 **Ahmed Mahmoud** — [LinkedIn](https://www.linkedin.com/in/ahmed-mahmoud-951a5716b/) · [Ahmedmah1284@gmail.com](mailto:Ahmedmah1284@gmail.com) · +20 1028207883

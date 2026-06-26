@@ -1,6 +1,14 @@
 <Solution>
-  <Project Path="TMS.API/TMS.API.csproj" />
-  <Project Path="TMS.Application/TMS.Application.csproj" />
-  <Project Path="TMS.Domain/TMS.Domain.csproj" />
-  <Project Path="TMS.Infrastruture/TMS.Infrastructure.csproj" />
+  <Folder Name="/src/">
+    <Project Path="TMS.API/TMS.API.csproj" />
+    <Project Path="TMS.Application/TMS.Application.csproj" />
+    <Project Path="TMS.Domain/TMS.Domain.csproj" />
+    <Project Path="TMS.Infrastruture/TMS.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TMS.API.Tests/TMS.API.Tests.csproj" />
+    <Project Path="tests/TMS.Application.Tests/TMS.Application.Tests.csproj" />
+    <Project Path="tests/TMS.Domain.Tests/TMS.Domain.Tests.csproj" />
+    <Project Path="tests/TMS.Infrastructure.Tests/TMS.Infrastructure.Tests.csproj" />
+  </Folder>
 </Solution>
