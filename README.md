@@ -73,34 +73,40 @@ The solution follows **Clean Architecture** (also called Onion Architecture). De
 
 ```mermaid
 flowchart TB
-    subgraph presentation [TMS.API]
-        Controllers
-        Middleware
-        ApiResponse
+    subgraph apiLayer ["TMS API"]
+        controllers[Controllers]
+        middleware[Middleware]
+        apiResponse[ApiResponse]
+        middleware --> controllers
+        controllers --> apiResponse
     end
-    subgraph application [TMS.Application]
-        MediatR[Commands and Queries]
-        UseCases
-        Services
-        DTOs
+    subgraph appLayer ["TMS Application"]
+        mediatr[MediatR]
+        useCases[Use Cases]
+        services[Services]
+        dtos[DTOs]
+        mediatr --> useCases
+        useCases --> services
+        useCases --> dtos
     end
-    subgraph domain [TMS.Domain]
-        Entities
-        Enums
-        DomainMethods
+    subgraph domainLayer ["TMS Domain"]
+        entities[Entities]
+        enums[Enums]
+        domainMethods[Domain Methods]
+        entities --> domainMethods
+        enums --> entities
     end
-    subgraph infrastructure [TMS.Infrastructure]
-        Repositories
-        DbContext
-        EFConfigurations
+    subgraph infraLayer ["TMS Infrastructure"]
+        repositories[Repositories]
+        dbContext[DbContext]
+        efConfig[EF Configurations]
+        repositories --> dbContext
+        dbContext --> efConfig
     end
-    Controllers --> MediatR
-    MediatR --> UseCases
-    UseCases --> Services
-    Services --> Repositories
-    Repositories --> DbContext
-    UseCases --> Entities
-    Services --> Entities
+    controllers --> mediatr
+    services --> repositories
+    useCases --> entities
+    services --> entities
 ```
 
 ### Dependency Rule
@@ -118,15 +124,15 @@ Business rules live in **Domain** (e.g. `Project.Create`, `Task.ChangeStatus`, `
 
 ```mermaid
 flowchart BT
-    Domain[TMS.Domain]
-    Application[TMS.Application]
-    Infrastructure[TMS.Infrastructure]
-    API[TMS.API]
+    domainNode["TMS.Domain"]
+    appNode["TMS.Application"]
+    infraNode["TMS.Infrastructure"]
+    apiNode["TMS.API"]
 
-    Application --> Domain
-    Infrastructure --> Application
-    API --> Application
-    API --> Infrastructure
+    appNode --> domainNode
+    infraNode --> appNode
+    apiNode --> appNode
+    apiNode --> infraNode
 ```
 
 ---
@@ -137,27 +143,31 @@ Every HTTP request flows through the following stages:
 
 ```mermaid
 sequenceDiagram
-    participant Client
-    participant Middleware as GlobalExceptionMiddleware
-    participant Auth as JWT_Auth
-    participant Filter as FluentValidationFilter
-    participant Controller
-    participant MediatR
-    participant UseCase
-    participant Service
-    participant Repository
-    participant DB as SQL_Server
+    participant client as Client
+    participant middleware as GlobalExceptionMiddleware
+    participant auth as JwtAuth
+    participant filter as FluentValidationFilter
+    participant controller as Controller
+    participant mediator as MediatR
+    participant useCase as UseCase
+    participant service as Service
+    participant repository as Repository
+    participant database as SqlServer
 
-    Client->>Middleware: HTTP Request
-    Middleware->>Auth: Authenticate if Authorize
-    Auth->>Filter: Validate request DTO
-    Filter->>Controller: Action executes
-    Controller->>MediatR: Send Command or Query
-    MediatR->>UseCase: ExecuteAsync
-    UseCase->>Service: Business orchestration
-    Service->>Repository: Data access
-    Repository->>DB: EF Core SaveChanges
-    DB-->>Client: ApiResponse JSON envelope
+    client->>middleware: HTTP request
+    middleware->>auth: Authenticate if required
+    auth->>filter: Validate request DTO
+    filter->>controller: Execute action
+    controller->>mediator: Send command or query
+    mediator->>useCase: ExecuteAsync
+    useCase->>service: Orchestrate business logic
+    service->>repository: Data access
+    repository->>database: EF Core SaveChanges
+    database-->>repository: Persisted
+    repository-->>service: Entity result
+    service-->>useCase: ServiceResult
+    useCase-->>controller: ServiceResult
+    controller-->>client: ApiResponse JSON
 ```
 
 | Stage | Component | File |
@@ -183,10 +193,10 @@ Each file contains **one record** (the message) and **one handler** (the process
 
 ```mermaid
 flowchart LR
-    Controller -->|"Send(command)"| MediatR
-    MediatR --> Handler
-    Handler --> IUseCase
-    IUseCase --> IService
+    controllerNode[Controller] -->|"Send command"| mediatorNode[MediatR]
+    mediatorNode --> handlerNode[Handler]
+    handlerNode --> useCaseNode[IUseCase]
+    useCaseNode --> serviceNode[IService]
 ```
 
 ### Feature folder layout
@@ -483,10 +493,10 @@ Requires `Authorization: Bearer <token>`.
 
 ```mermaid
 flowchart LR
-    Register --> UserRole[Assign User role]
-    Login --> JWT[JWT with role claims]
-    JWT --> Authorize[Authorize attribute]
-    Authorize --> OwnerScope[OwnerId data isolation]
+    registerNode[Register] --> userRoleNode["Assign User role"]
+    loginNode[Login] --> jwtNode["JWT with role claims"]
+    jwtNode --> authorizeNode["Authorize attribute"]
+    authorizeNode --> ownerScopeNode["OwnerId data isolation"]
 ```
 
 ### JWT authentication
@@ -534,18 +544,13 @@ Errors are handled at three layers:
 
 ```mermaid
 flowchart TD
-    Request[Incoming Request]
-    FV[FluentValidationFilter]
-    UC[Use Case ServiceResult]
-    GEM[GlobalExceptionMiddleware]
-
-    Request --> FV
-    FV -->|Invalid DTO| BadRequest400[400 Bad Request]
-    FV -->|Valid| UC
-    UC -->|Expected failure| ResultCode[401 / 404 / 409 etc.]
-    UC -->|Unhandled exception| GEM
-    GEM -->|Development| DevPage[Developer Exception Page]
-    GEM -->|Production| Json500[500 JSON envelope]
+    requestNode[Incoming Request] --> fvNode[FluentValidationFilter]
+    fvNode -->|"Invalid DTO"| badRequestNode["400 Bad Request"]
+    fvNode -->|"Valid"| ucNode[UseCase ServiceResult]
+    ucNode -->|"Expected failure"| resultNode["401 404 409 responses"]
+    ucNode -->|"Unhandled exception"| gemNode[GlobalExceptionMiddleware]
+    gemNode -->|"Development"| devPageNode["Developer Exception Page"]
+    gemNode -->|"Production"| prodErrorNode["500 JSON envelope"]
 ```
 
 ### 1. FluentValidationFilter (input validation)
@@ -579,37 +584,39 @@ Use cases return typed results instead of throwing for expected cases:
 ```mermaid
 erDiagram
     AspNetUsers ||--o{ Projects : owns
-    Projects ||--o{ Tasks : contains
+    Projects ||--o{ ProjectTasks : contains
 
     AspNetUsers {
-        string Id PK
+        string Id
         string Email
         string FirstName
         string LastName
         string RefreshToken
-        datetime RefreshTokenExpiryTime
+        string RefreshTokenExpiryTime
         bool IsActive
         bool IsDeleted
     }
     Projects {
-        guid Id PK
-        string OwnerId FK
+        string Id
+        string OwnerId
         string Name
         string Description
-        datetime CreatedAt
+        string CreatedAt
         bool IsDeleted
     }
-    Tasks {
-        guid Id PK
-        guid ProjectId FK
+    ProjectTasks {
+        string Id
+        string ProjectId
         string Title
         string Description
         int Status
         int Priority
-        datetime DueDate
+        string DueDate
         bool IsDeleted
     }
 ```
+
+> **Note:** The `ProjectTasks` entity in the diagram represents the `Tasks` database table (renamed to avoid Mermaid rendering conflicts).
 
 ### Tables
 
