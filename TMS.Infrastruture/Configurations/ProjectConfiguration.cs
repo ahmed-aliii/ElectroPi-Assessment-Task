@@ -12,6 +12,12 @@ namespace TMS.Infrastructure
 
             builder.HasKey(p => p.Id);
 
+            builder.Property(p => p.OwnerId)
+                .HasMaxLength(450)
+                .IsRequired();
+
+            builder.HasIndex(p => p.OwnerId);
+
             builder.Property(p => p.Name)
                 .HasMaxLength(200)
                 .IsRequired();
@@ -22,10 +28,18 @@ namespace TMS.Infrastructure
             builder.Property(p => p.CreatedAt).IsRequired();
             builder.Property(p => p.IsDeleted).HasDefaultValue(false);
 
+            builder.HasOne(p => p.Owner)
+                .WithMany()
+                .HasForeignKey(p => p.OwnerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             builder.HasMany(p => p.Tasks)
                 .WithOne(t => t.Project)
                 .HasForeignKey(t => t.ProjectId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            builder.Navigation(p => p.Tasks)
+                .UsePropertyAccessMode(PropertyAccessMode.Field);
         }
     }
 }

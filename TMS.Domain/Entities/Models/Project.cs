@@ -2,6 +2,9 @@ namespace TMS.Domain
 {
     public class Project : BaseEntity
     {
+        public string OwnerId { get; private set; } = null!;
+        public ApplicationUser Owner { get; private set; } = null!;
+
         public string Name { get; private set; } = null!;
         public string? Description { get; private set; }
 
@@ -11,14 +14,17 @@ namespace TMS.Domain
         private Project() { }
 
         #region Domain Methods
-        public static Project Create(string name, string? description, Guid? createdBy = null)
+        public static Project Create(string name, string? description, string ownerId, Guid? createdBy = null)
         {
             if (string.IsNullOrWhiteSpace(name))
                 throw new ArgumentException("Project name is required.");
+            if (string.IsNullOrWhiteSpace(ownerId))
+                throw new ArgumentException("Owner id is required.");
 
             return new Project
             {
                 Id = Guid.NewGuid(),
+                OwnerId = ownerId,
                 Name = name.Trim(),
                 Description = description?.Trim(),
                 CreatedAt = DateTime.UtcNow,
@@ -55,8 +61,7 @@ namespace TMS.Domain
             IsDeleted = true;
             DeletedAt = DateTime.UtcNow;
             DeletedBy = deletedBy;
-        } 
+        }
         #endregion
-
     }
 }

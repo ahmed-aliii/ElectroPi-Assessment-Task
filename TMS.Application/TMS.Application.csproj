@@ -18,6 +18,8 @@
 
   <ItemGroup>
     <Folder Include="Features\Handlers\Authentication\Queries\" />
+    <Folder Include="Features\Handlers\Project\Commands\" />
+    <Folder Include="Features\Handlers\Project\Queries\" />
     <Folder Include="Profiles\" />
   </ItemGroup>
 
