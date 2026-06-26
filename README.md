@@ -60,7 +60,7 @@ A .NET 9 Web API for managing projects and tasks with JWT authentication, clean 
 
 ## Clean Architecture
 
-The solution follows **Clean Architecture** (also called Onion Architecture). Dependencies point inward: outer layers depend on inner layers, never the reverse.
+The solution follows **Clean Architecture** . Dependencies point inward: outer layers depend on inner layers, never the reverse.
 
 ```mermaid
 graph TD
