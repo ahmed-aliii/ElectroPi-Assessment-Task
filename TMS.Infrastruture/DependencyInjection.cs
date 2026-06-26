@@ -30,6 +30,7 @@ namespace TMS.Infrastructure
             services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
             services.AddScoped<IUserRepository, UserRepository>();
             services.AddScoped<IProjectRepository, ProjectRepository>();
+            services.AddScoped<ITaskRepository, TaskRepository>();
             #endregion
 
             #region Identity Services

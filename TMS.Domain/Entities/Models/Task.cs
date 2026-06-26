@@ -20,7 +20,7 @@ namespace TMS.Domain
         private Task() { }
 
         #region Domain Methods
-        internal static Task Create(
+        public static Task Create(
     Guid projectId,
     string title,
     string? description,

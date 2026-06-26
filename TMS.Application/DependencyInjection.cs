@@ -1,4 +1,4 @@
-using FluentValidation;
+﻿using FluentValidation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System;
@@ -50,6 +50,10 @@ namespace TMS.Application
             services.AddScoped<IGetProjectByIdUseCase, GetProjectByIdUseCase>();
             services.AddScoped<IUpdateProjectUseCase, UpdateProjectUseCase>();
             services.AddScoped<IDeleteProjectUseCase, DeleteProjectUseCase>();
+            services.AddScoped<ICreateTaskUseCase, CreateTaskUseCase>();
+            services.AddScoped<IGetTasksByProjectUseCase, GetTasksByProjectUseCase>();
+            services.AddScoped<IUpdateTaskStatusUseCase, UpdateTaskStatusUseCase>();
+            services.AddScoped<IDeleteTaskUseCase, DeleteTaskUseCase>();
             #endregion
 
             #region GenericService
@@ -57,6 +61,7 @@ namespace TMS.Application
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IUserService, UserService>();
             services.AddScoped<IProjectService, ProjectService>();
+            services.AddScoped<ITaskService, TaskService>();
 
             #endregion
 
