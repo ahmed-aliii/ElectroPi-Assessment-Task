@@ -47,23 +47,14 @@ A .NET 9 Web API for managing projects and tasks with JWT authentication, clean 
 
 ## Solution Structure
 
-| Project | Key folders | Role |
-|---------|-------------|------|
-| `TMS.Domain` | `Entities/`, `Enums/`, `Constants/` | Domain entities, factory methods, `AppRoles` |
-| `TMS.Application` | `DTOs/`, `Features/`, `UseCases/`, `Services/`, `Validators/`, `Interfaces/` | Use cases, MediatR, validation, service contracts |
-| `TMS.Infrastruture` | `Repositories/`, `Configurations/`, `Migrations/`, `Data/` | EF Core, repository implementations |
-| `TMS.API` | `Controllers/`, `Common/`, `Swagger/`, `Program.cs` | HTTP API, middleware, JWT, Swagger |
+| Project | Role |
+|---------|------|
+| `TMS.Domain` | Entities, enums, domain methods, `AppRoles` |
+| `TMS.Application` | Use cases, MediatR, DTOs, validators, service contracts |
+| `TMS.Infrastruture` | EF Core, repositories, migrations *(folder typo; namespace is `TMS.Infrastructure`)* |
+| `TMS.API` | Controllers, middleware, JWT, Swagger |
 
-### Layer Responsibilities
-
-| Layer | Project | Responsibility | May reference |
-|-------|---------|----------------|---------------|
-| Domain | `TMS.Domain` | Entities, enums, domain factory methods, invariants | Nothing |
-| Application | `TMS.Application` | Use cases, DTOs, interfaces, MediatR, validation rules | Domain |
-| Infrastructure | `TMS.Infrastructure` | EF Core, repositories, Identity, migrations | Application, Domain |
-| Presentation | `TMS.API` | Controllers, middleware, JWT wiring, Swagger | Application, Infrastructure |
-
-> **Note:** The physical folder is named `TMS.Infrastruture` (typo), but the .NET namespace and project assembly use `TMS.Infrastructure`.
+**Dependency rule:** Domain → Application → Infrastructure → API (inward only). Use cases call services; services call repositories.
 
 ---
 
@@ -72,40 +63,13 @@ A .NET 9 Web API for managing projects and tasks with JWT authentication, clean 
 The solution follows **Clean Architecture** (also called Onion Architecture). Dependencies point inward: outer layers depend on inner layers, never the reverse.
 
 ```mermaid
-flowchart TB
-    subgraph apiLayer ["TMS API"]
-        controllers[Controllers]
-        middleware[Middleware]
-        apiResponse[ApiResponse]
-        middleware --> controllers
-        controllers --> apiResponse
-    end
-    subgraph appLayer ["TMS Application"]
-        mediatr[MediatR]
-        useCases[Use Cases]
-        services[Services]
-        dtos[DTOs]
-        mediatr --> useCases
-        useCases --> services
-        useCases --> dtos
-    end
-    subgraph domainLayer ["TMS Domain"]
-        entities[Entities]
-        enums[Enums]
-        domainMethods[Domain Methods]
-        entities --> domainMethods
-        enums --> entities
-    end
-    subgraph infraLayer ["TMS Infrastructure"]
-        repositories[Repositories]
-        dbContext[DbContext]
-        efConfig[EF Configurations]
-        repositories --> dbContext
-        dbContext --> efConfig
-    end
-    controllers --> mediatr
-    services --> repositories
-    useCases --> entities
+graph TD
+    controllers[Controllers] --> mediatr[MediatR]
+    mediatr --> useCases[Use Cases]
+    useCases --> services[Services]
+    services --> repositories[Repositories]
+    repositories --> dbContext[DbContext]
+    useCases --> entities[Domain Entities]
     services --> entities
 ```
 
@@ -123,16 +87,15 @@ Business rules live in **Domain** (e.g. `Project.Create`, `Task.ChangeStatus`, `
 ## Project Dependencies
 
 ```mermaid
-flowchart BT
-    domainNode["TMS.Domain"]
-    appNode["TMS.Application"]
-    infraNode["TMS.Infrastructure"]
-    apiNode["TMS.API"]
-
-    appNode --> domainNode
-    infraNode --> appNode
-    apiNode --> appNode
-    apiNode --> infraNode
+graph BT
+    domainLayer[TMS Domain]
+    appLayer[TMS Application]
+    infraLayer[TMS Infrastructure]
+    apiLayer[TMS API]
+    appLayer --> domainLayer
+    infraLayer --> appLayer
+    apiLayer --> appLayer
+    apiLayer --> infraLayer
 ```
 
 ---
@@ -143,398 +106,131 @@ Every HTTP request flows through the following stages:
 
 ```mermaid
 sequenceDiagram
-    participant client as Client
-    participant middleware as GlobalExceptionMiddleware
-    participant auth as JwtAuth
-    participant filter as FluentValidationFilter
-    participant controller as Controller
-    participant mediator as MediatR
-    participant useCase as UseCase
-    participant service as Service
-    participant repository as Repository
-    participant database as SqlServer
+    participant C as Client
+    participant M as Middleware
+    participant A as Auth
+    participant F as Validation
+    participant Ctrl as Controller
+    participant Med as MediatR
+    participant UC as UseCase
+    participant Svc as Service
+    participant Repo as Repository
+    participant DB as Database
 
-    client->>middleware: HTTP request
-    middleware->>auth: Authenticate if required
-    auth->>filter: Validate request DTO
-    filter->>controller: Execute action
-    controller->>mediator: Send command or query
-    mediator->>useCase: ExecuteAsync
-    useCase->>service: Orchestrate business logic
-    service->>repository: Data access
-    repository->>database: EF Core SaveChanges
-    database-->>repository: Persisted
-    repository-->>service: Entity result
-    service-->>useCase: ServiceResult
-    useCase-->>controller: ServiceResult
-    controller-->>client: ApiResponse JSON
+    C->>M: Request
+    M->>A: Authenticate
+    A->>F: Validate DTO
+    F->>Ctrl: Action
+    Ctrl->>Med: Command or Query
+    Med->>UC: ExecuteAsync
+    UC->>Svc: Business logic
+    Svc->>Repo: Query or command
+    Repo->>DB: SaveChanges
+    DB-->>C: JSON response
 ```
 
-| Stage | Component | File |
-|-------|-----------|------|
-| Exception safety net | `GlobalExceptionMiddleware` | `TMS.API/Common/Middlewares/GlobalExceptionMiddleware.cs` |
-| Input validation | `FluentValidationFilter` | `TMS.API/Common/Filters/FluentValidationFilter.cs` |
-| Authentication | JWT Bearer middleware | `TMS.API/Program.cs` |
-| Dispatch | MediatR | `TMS.Application/Features/` |
-| Response shaping | `ApiResponse.FromResult` | `TMS.API/Common/ApiResponse/ApiResponse.cs` |
+Pipeline: `GlobalExceptionMiddleware` → JWT auth → `FluentValidationFilter` → Controller → MediatR → Use case → Service → Repository → `ApiResponse.FromResult`.
 
 ---
 
 ## CQRS and MediatR
 
-The application uses a **CQRS-style** separation between commands (writes) and queries (reads), implemented with **MediatR**.
+Commands (writes) and queries (reads) live under `TMS.Application/Features/{Feature}/`. Each file has one message + one handler that delegates to a use case.
 
-| Type | Purpose | Location |
-|------|---------|----------|
-| **Command** | Create, update, delete | `TMS.Application/Features/{Feature}/Commands/` |
-| **Query** | Read operations | `TMS.Application/Features/{Feature}/Queries/` |
-
-Each file contains **one record** (the message) and **one handler** (the processor). Handlers are thin: they inject the matching use case interface and call `ExecuteAsync`.
-
-```mermaid
-flowchart LR
-    controllerNode[Controller] -->|"Send command"| mediatorNode[MediatR]
-    mediatorNode --> handlerNode[Handler]
-    handlerNode --> useCaseNode[IUseCase]
-    useCaseNode --> serviceNode[IService]
-```
-
-### Feature folder layout
-
-| Feature | Commands | Queries |
-|---------|----------|---------|
-| Project | Create, Update, Delete | GetById, GetPaged |
-| Task | Create, UpdateStatus, Delete | GetByProject |
-| Authentication | Login, Register, RefreshToken | — |
-
-Authentication handlers use the `Features/Handlers/Authentication/Commands/` path; Project and Task follow the `Features/{Feature}/Commands|Queries/` convention.
-
-Each handler injects an `I*UseCase` and calls `ExecuteAsync` — see `CreateProjectCommand.cs` in `Features/Project/Commands/` for the pattern.
+Features: **Project** (CRUD + paged list), **Task** (create, list by project, update status, delete), **Authentication** (login, register, refresh token).
 
 ---
 
 ## Use Cases and Layering
 
-Use cases live in `TMS.Application/UseCases/{Feature}/` with **one interface and one class per file**.
+Use cases in `TMS.Application/UseCases/{Feature}/` expose `ExecuteAsync` → `ServiceResult<T>`.
 
-| Feature | Use cases |
-|---------|-----------|
-| Authentication | `LoginUseCase`, `RegisterUserUseCase`, `RefreshTokenUseCase` |
-| Project | `CreateProjectUseCase`, `GetProjectsPagedUseCase`, `GetProjectByIdUseCase`, `UpdateProjectUseCase`, `DeleteProjectUseCase` |
-| Task | `CreateTaskUseCase`, `GetTasksByProjectUseCase`, `UpdateTaskStatusUseCase`, `DeleteTaskUseCase` |
+**Rule:** Use case → Service → Repository (use cases never inject repositories or `UserManager`).
 
-### Layering rule (enforced in code)
-
-**Use Case → Service → Repository → Database**
-
-- Use cases depend on **service interfaces only** (`IProjectService`, `ITaskService`, `IUserService`, `IAuthService`).
-- Services depend on **repository interfaces** (`IProjectRepository`, `ITaskRepository`, etc.).
-- Use cases **never** inject repositories or `UserManager` directly.
-
-### Use case contract
-
-Every use case exposes a single `ExecuteAsync(...)` method returning `ServiceResult<T>` (for example, `ICreateProjectUseCase.ExecuteAsync(CreateProjectRequest)`).
-
-### Data isolation
-
-Projects are scoped by `OwnerId` (the authenticated user's Identity ID). Tasks have no direct owner FK; access is validated by joining through `Task.Project.OwnerId`. `ICurrentUserService` reads the user ID from the JWT `NameIdentifier` claim.
+**Data isolation:** Projects scoped by `OwnerId`; tasks validated via `Task.Project.OwnerId` using `ICurrentUserService`.
 
 ---
 
 ## Generic Repository and Service
 
-### IGenericRepository&lt;T&gt;
-
-Defined in `TMS.Application/Interfaces/Repositories/Generic/IGenericRepository.cs`. Provides:
-
-| Method | Description |
-|--------|-------------|
-| `GetAllAsync` | Untracked queryable |
-| `GetAllWithIncludeAsync` | With eager-loading |
-| `GetByIdAsync` | Single entity by GUID |
-| `GetByIdWithIncludeAsync` | Single entity with includes |
-| `AddAsync` | Insert |
-| `UpdateAsync` | Update tracked entity |
-| `DeleteAsync` | Hard delete by ID |
-| `IsExistAsync` | Existence check |
-| `GetAllPagedAsync` | Paginated list with optional filter and includes |
-
-Implemented by `GenericRepository<T>` in `TMS.Infrastruture/Repositories/Generic/GenericRepository.cs`.
-
-### IGenericService&lt;T&gt;
-
-Defined in `TMS.Application/Interfaces/Services/Generic/IGenericService.cs`. Wraps repository calls and returns `ServiceResult<T>` for every operation. Implemented by `GenericService<T>`.
-
-### Feature-specific extensions
-
-| Interface | Extra methods |
-|-----------|---------------|
-| `IProjectRepository` / `IProjectService` | `GetByIdAndOwnerAsync`, `GetTrackedByIdAndOwnerAsync` |
-| `ITaskRepository` / `ITaskService` | `GetByIdAndOwnerAsync`, `GetTrackedByIdAndOwnerAsync`, `GetByProjectIdAndOwnerAsync` |
-| `IUserRepository` / `IUserService` | `GetByEmailAsync`, `CheckPasswordAsync`, `RegisterAsync` |
-
-Feature services (`ProjectService`, `TaskService`) inherit `GenericService<T>` and add owner-scoped methods that return `ServiceResult.NotFound` when the entity is missing or not owned by the current user.
+`IGenericRepository<T>` and `IGenericService<T>` provide standard CRUD and paging. Feature-specific interfaces add owner-scoped lookups (`GetByIdAndOwnerAsync`, `GetByProjectIdAndOwnerAsync`, etc.) on `Project`, `Task`, and `User`.
 
 ---
 
 ## ServiceResult and ApiResponse
 
-The solution uses a **dual-wrapper pattern**: application logic returns `ServiceResult<T>`; the API layer maps it to `ApiResponse<T>` for HTTP responses.
-
-### ServiceResult&lt;T&gt; (Application layer)
-
-Location: `TMS.Application/Common/Results/ServiceResult.cs`
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `Success` | `bool` | Whether the operation succeeded |
-| `StatusCode` | `HttpStatusCode` | Intended HTTP status |
-| `Messages` | `string` | Human-readable message |
-| `Data` | `T?` | Payload on success |
-
-**Factory methods:**
-
-| Method | HTTP Status | When to use |
-|--------|-------------|-------------|
-| `Ok(data)` | 200 | Successful read or update |
-| `Created(data)` | 201 | Resource created |
-| `BadRequest(message)` | 400 | Validation or business rule failure |
-| `Unauthorized(message)` | 401 | Missing or invalid credentials |
-| `Forbidden(message)` | 403 | Authenticated but not permitted |
-| `NotFound(message)` | 404 | Resource not found |
-| `Conflict(message)` | 409 | Duplicate resource (e.g. email exists) |
-| `Failure(message)` | 500 | Unexpected server error |
-
-### ApiResponse&lt;T&gt; (API layer)
-
-Location: `TMS.API/Common/ApiResponse/ApiResponse.cs`
-
-Controllers map results through `ApiResponse.FromResult(controller, serviceResult)`, which sets the HTTP status code and wraps the payload in a consistent JSON envelope.
-
-### Response envelope
-
-All API responses share the same shape:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `success` | `bool` | Operation outcome |
-| `messages` | `string` | Human-readable message |
-| `data` | `T` or `null` | Payload on success |
-| `statusCode` | `number` | HTTP status code |
-
-Paginated project lists return `data` as a `PagedResult` with `items`, `pageNumber`, `pageSize`, `totalRecords`, `totalPages`, `hasPreviousPage`, and `hasNextPage`.
+Application layer returns `ServiceResult<T>` (success, status code, message, data). Controllers map it to `ApiResponse<T>` via `ApiResponse.FromResult`. Factory helpers cover 200, 201, 400, 401, 403, 404, 409, and 500. Paginated lists use `PagedResult` with `items`, `pageNumber`, `pageSize`, and page metadata.
 
 ---
 
 ## Naming Conventions
 
-| Area | Convention | Example |
-|------|------------|---------|
-| Solution projects | `TMS.{Layer}` | `TMS.Application` |
-| Controllers | `{Entity}Controller` | `ProjectsController` |
-| Base controller | `ApiControllerBase` | Shared versioning + route |
-| Use case interface | `I{Action}{Entity}UseCase` | `ICreateProjectUseCase` |
-| Use case class | `{Action}{Entity}UseCase` | `CreateProjectUseCase` |
-| Service interface | `I{Entity}Service` | `IProjectService` |
-| Repository interface | `I{Entity}Repository` | `ITaskRepository` |
-| Command record | `{Action}{Entity}Command` | `DeleteTaskCommand` |
-| Query record | `Get{...}Query` | `GetTasksByProjectQuery` |
-| Request DTO | `{Action}{Entity}Request` | `CreateTaskRequest` |
-| Response DTO | `{Entity}Response` | `TaskResponse` |
-| Validator | `{Dto}Validator` | `CreateProjectRequestValidator` |
-| EF configuration | `{Entity}Configuration` | `ProjectConfiguration` |
-| AutoMapper profile | `{Entity}Profile` | `TaskProfile` |
-| DI extension | `Add{Layer}Service` | `AddApplicationService` |
+`I{Action}{Entity}UseCase` / `{Action}{Entity}UseCase`, `I{Entity}Service`, `I{Entity}Repository`, `{Action}{Entity}Command`, `Get{...}Query`, `{Action}{Entity}Request`, `{Entity}Response`, `{Dto}Validator`, `{Entity}Configuration`, `{Entity}Profile`.
 
-**File organization rules:**
-
-- One use case per file.
-- One validator per file.
-- One MediatR command/query + handler per file.
-- DTOs grouped by feature in `DTOs/{Feature}/`.
+One file per use case, validator, and MediatR handler. DTOs grouped under `DTOs/{Feature}/`.
 
 ---
 
 ## API Design
 
-### Principles
-
-- **Thin controllers** — no business logic; only MediatR dispatch and `ApiResponse.FromResult`.
-- **Resource-oriented URLs** — controllers map to entities (`Auth`, `Projects`, `Tasks`).
-- **Soft delete** — `DELETE` endpoints call domain `SoftDelete()` and persist via `UpdateAsync`; rows are not physically removed.
-- **Owner-scoped data** — users only see and mutate their own projects and tasks.
-- **Swagger annotations** — `[SwaggerOperation]`, `[SwaggerTag]` on all endpoints.
-- **JWT in Swagger** — Bearer token can be set in the Swagger UI Authorize dialog.
-
-### HTTP methods used
-
-| Method | Usage |
-|--------|-------|
-| `GET` | Read (list, get by id) |
-| `POST` | Create, login, register |
-| `PUT` | Full update (projects) |
-| `PATCH` | Partial update (task status) |
-| `DELETE` | Soft delete |
+Thin controllers dispatch MediatR and return `ApiResponse`. Resources: `Auth`, `Projects`, `Tasks`. Deletes are soft (`SoftDelete()` + `UpdateAsync`). Swagger documents all endpoints with JWT Bearer support.
 
 ---
 
 ## API Versioning
 
-Versioning uses **URL segment** strategy via `Asp.Versioning.Mvc`.
-
-### Configuration (`TMS.API/Program.cs`)
-
-- Default version: `1.0`
-- `AssumeDefaultVersionWhenUnspecified = true`
-- `ReportApiVersions = true` (response header lists supported versions)
-- `UrlSegmentApiVersionReader` — version read from URL path
-
-### Controller base (`ApiControllerBase`)
-
-All controllers inherit `ApiControllerBase`, which applies `[ApiVersion("1.0")]`, route template `api/v{version:apiVersion}/[controller]`, and `[ApiController]`. Current routes resolve to `/api/v1/{controller}/...`.
-
-### Swagger
-
-`ConfigureSwaggerOptions` generates a separate OpenAPI document per API version. Swagger UI lists each version (e.g. **TMS API V1**).
-
-Unversioned routes such as `/api/Projects` **do not work** — clients must include the version segment.
+URL segment versioning via `Asp.Versioning.Mvc`. Default `v1`, route template `api/v{version:apiVersion}/[controller]` on `ApiControllerBase`. Swagger generates one document per version.
 
 ---
 
 ## Endpoint Reference
 
-Base URL (development): `https://localhost:44378` or as configured in launch settings.
+Base: `/api/v1/`. Full request/response schemas are in Swagger.
 
-All versioned routes use the prefix `/api/v1/`.
+### Auth (no token required)
 
-### Authentication — `AuthController`
+| Method | Path |
+|--------|------|
+| `POST` | `/Auth/login` |
+| `POST` | `/Auth/register` |
+| `POST` | `/Auth/refresh-token` |
 
-No authentication required.
+### Projects (`[Authorize]`)
 
-| Method | Path | Description | Request body | Response |
-|--------|------|-------------|--------------|----------|
-| `POST` | `/api/v1/Auth/login` | Authenticate user | `LoginRequest` | `AuthResponse` |
-| `POST` | `/api/v1/Auth/register` | Register new user | `RegisterRequest` | `AuthResponse` |
-| `POST` | `/api/v1/Auth/refresh-token` | Refresh JWT tokens | `RefreshTokenRequest` | `AuthResponse` |
+| Method | Path |
+|--------|------|
+| `GET` | `/Projects` *(query: `pageNumber`, `pageSize`)* |
+| `GET` | `/Projects/{id}` |
+| `POST` | `/Projects` |
+| `PUT` | `/Projects/{id}` |
+| `DELETE` | `/Projects/{id}` |
 
-**DTO fields**
+### Tasks (`[Authorize]`)
 
-| DTO | Fields |
-|-----|--------|
-| `LoginRequest` | `email`, `password` |
-| `RegisterRequest` | `email`, `firstName`, `lastName`, `password` |
-| `RefreshTokenRequest` | `accessToken`, `refreshToken` |
-| `AuthResponse` | `token`, `refreshToken`, `accessTokenExpiration`, `refreshTokenExpiration`, `user` (`AuthenticatedUserDto`) |
-
----
-
-### Projects — `ProjectsController`
-
-Requires `Authorization: Bearer <token>`.
-
-| Method | Path | Description | Request | Response |
-|--------|------|-------------|---------|----------|
-| `GET` | `/api/v1/Projects` | Paginated list (owner-scoped) | Query: `pageNumber`, `pageSize` | `PagedResult<ProjectResponse>` |
-| `GET` | `/api/v1/Projects/{id}` | Get project by ID | — | `ProjectResponse` |
-| `POST` | `/api/v1/Projects` | Create project | `CreateProjectRequest` | `ProjectResponse` (201) |
-| `PUT` | `/api/v1/Projects/{id}` | Update project | `UpdateProjectRequest` | `ProjectResponse` |
-| `DELETE` | `/api/v1/Projects/{id}` | Soft-delete project | — | `ProjectResponse` |
-
-**DTO fields**
-
-| DTO | Fields |
-|-----|--------|
-| `CreateProjectRequest` / `UpdateProjectRequest` | `name`, `description` (optional) |
-| `GetProjectsPagedRequest` (query) | `pageNumber` (default 1), `pageSize` (default 10, max 100) |
-| `ProjectResponse` | `id`, `name`, `description`, `createdAt`, `updatedAt`, `taskCount` |
-
----
-
-### Tasks — `TasksController`
-
-Requires `Authorization: Bearer <token>`.
-
-| Method | Path | Description | Request | Response |
-|--------|------|-------------|---------|----------|
-| `POST` | `/api/v1/Tasks` | Create task in owned project | `CreateTaskRequest` | `TaskResponse` (201) |
-| `GET` | `/api/v1/Tasks/project/{projectId}` | List tasks by project | — | `IReadOnlyList<TaskResponse>` |
-| `PATCH` | `/api/v1/Tasks/{id}/status` | Update task status only | `UpdateTaskStatusRequest` | `TaskResponse` |
-| `DELETE` | `/api/v1/Tasks/{id}` | Soft-delete task | — | `TaskResponse` |
-
-**DTO fields**
-
-| DTO | Fields |
-|-----|--------|
-| `CreateTaskRequest` | `projectId`, `title`, `description` (optional), `status` (default Todo), `dueDate` (optional), `priority` (default Medium) |
-| `UpdateTaskStatusRequest` | `status` |
-| `TaskResponse` | `id`, `projectId`, `title`, `description`, `status`, `dueDate`, `priority`, `createdAt`, `updatedAt` |
-
-**TaskStatus**
-
-| Value | Name |
-|-------|------|
-| 0 | Todo |
-| 1 | InProgress |
-| 2 | Done |
-| 3 | Cancelled |
-
-#### TaskPriority enum
-
-| Value | Name |
-|-------|------|
-| 0 | Low |
-| 1 | Medium |
-| 2 | High |
-| 3 | Critical |
+| Method | Path |
+|--------|------|
+| `POST` | `/Tasks` |
+| `GET` | `/Tasks/project/{projectId}` |
+| `PATCH` | `/Tasks/{id}/status` |
+| `DELETE` | `/Tasks/{id}` |
 
 ---
 
 ## Authentication and Role-Based Authorization
 
 ```mermaid
-flowchart LR
-    registerNode[Register] --> userRoleNode["Assign User role"]
-    loginNode[Login] --> jwtNode["JWT with role claims"]
-    jwtNode --> authorizeNode["Authorize attribute"]
-    authorizeNode --> ownerScopeNode["OwnerId data isolation"]
+graph LR
+    A[Register] --> B[User Role]
+    C[Login] --> D[JWT Token]
+    D --> E[Authorize]
+    E --> F[Owner Scoped Data]
 ```
 
-### JWT authentication
+### JWT and roles
 
-- Scheme: `Bearer` (JWT)
-- Configured in `TMS.API/Program.cs` with issuer, audience, and signing key from `appsettings.json` (`jwt` section).
-- Access token lifetime: configurable via `jwt:accessTokenExpirationMinutes` (default 100 minutes).
-- Refresh token lifetime: `jwt:refreshTokenExpirationDays` (default 7 days).
-- `AuthService.BuildAuthResponseAsync` generates tokens and persists the refresh token on the user entity.
+JWT Bearer auth configured in `Program.cs` (`jwt` section in `appsettings.json`). Seeded roles: `Admin`, `User` (new registrations get `User`). Protected controllers use `[Authorize]`; data isolation is via `OwnerId`, not role policies yet.
 
-### Roles
-
-| Role | Seeded | Assigned on register |
-|------|--------|----------------------|
-| `Admin` | Yes (EF `HasData`) | No |
-| `User` | Yes (EF `HasData`) | Yes |
-
-Roles are defined in `TMS.Domain/Constants/AppRoles.cs` and seeded via `IdentityRoleConfiguration`.
-
-JWT tokens include `ClaimTypes.Role` for each role. `AuthenticatedUserDto` returns roles in the login/register response.
-
-### Current authorization model
-
-| Mechanism | Applied where | Purpose |
-|-----------|---------------|---------|
-| `[Authorize]` | `ProjectsController`, `TasksController` | Require valid JWT |
-| `Project.OwnerId` | All project/task use cases | Per-user data isolation |
-| `ICurrentUserService` | Use cases | Read current user ID from JWT |
-
-**Important:** Endpoints do not currently use `[Authorize(Roles = "Admin")]`. Role infrastructure (seeded roles, JWT role claims) is in place for future admin-only features. Today, authorization is **authentication + owner-scoped data access**.
-
-### Using Swagger with JWT
-
-1. Call `POST /api/v1/Auth/login` or `register`.
-2. Copy the `token` from the response.
-3. Click **Authorize** in Swagger UI.
-4. Enter: `Bearer <your-token>`.
-5. Call protected endpoints.
+**Swagger:** Login → copy `token` → Authorize → `Bearer <token>`.
 
 ---
 
@@ -543,39 +239,17 @@ JWT tokens include `ClaimTypes.Role` for each role. `AuthenticatedUserDto` retur
 Errors are handled at three layers:
 
 ```mermaid
-flowchart TD
-    requestNode[Incoming Request] --> fvNode[FluentValidationFilter]
-    fvNode -->|"Invalid DTO"| badRequestNode["400 Bad Request"]
-    fvNode -->|"Valid"| ucNode[UseCase ServiceResult]
-    ucNode -->|"Expected failure"| resultNode["401 404 409 responses"]
-    ucNode -->|"Unhandled exception"| gemNode[GlobalExceptionMiddleware]
-    gemNode -->|"Development"| devPageNode["Developer Exception Page"]
-    gemNode -->|"Production"| prodErrorNode["500 JSON envelope"]
+graph TD
+    A[Request] --> B[FluentValidation]
+    B --> C[UseCase]
+    C --> D[ServiceResult]
+    C --> E[GlobalExceptionMiddleware]
+    B --> F[400 Bad Request]
+    D --> G[401 404 409]
+    E --> H[500 Error]
 ```
 
-### 1. FluentValidationFilter (input validation)
-
-- Runs **before** the controller action.
-- Resolves `IValidator<T>` for each action argument from DI.
-- On failure: returns `400 Bad Request` with validation error messages.
-- Validators live in `TMS.Application/Validators/{Feature}/` — one file per DTO.
-
-### 2. ServiceResult (expected business failures)
-
-Use cases return typed results instead of throwing for expected cases:
-
-| Scenario | Result |
-|----------|--------|
-| Not logged in | `Unauthorized` (401) |
-| Project/task not found or not owned | `NotFound` (404) |
-| Email already registered | `Conflict` (409) |
-| Domain/service failure | `BadRequest` (400) |
-
-### 3. GlobalExceptionMiddleware (unexpected exceptions)
-
-- Registered early in the pipeline.
-- **Development:** re-throws so `UseDeveloperExceptionPage` shows details.
-- **Production:** catches unhandled exceptions, maps common types (`UnauthorizedAccessException`, `ArgumentException`, `KeyNotFoundException`) to `ServiceResult`, returns JSON with camelCase properties.
+**Layers:** FluentValidation → 400 on invalid input; `ServiceResult` → 401/404/409 for expected failures; `GlobalExceptionMiddleware` → 500 in production (developer page in Development).
 
 ---
 
@@ -583,158 +257,42 @@ Use cases return typed results instead of throwing for expected cases:
 
 ```mermaid
 erDiagram
-    AspNetUsers ||--o{ Projects : owns
-    Projects ||--o{ ProjectTasks : contains
-
-    AspNetUsers {
-        string Id
-        string Email
-        string FirstName
-        string LastName
-        string RefreshToken
-        string RefreshTokenExpiryTime
-        bool IsActive
-        bool IsDeleted
-    }
-    Projects {
-        string Id
-        string OwnerId
-        string Name
-        string Description
-        string CreatedAt
-        bool IsDeleted
-    }
-    ProjectTasks {
-        string Id
-        string ProjectId
-        string Title
-        string Description
-        int Status
-        int Priority
-        string DueDate
-        bool IsDeleted
-    }
+    USERS ||--o{ PROJECTS : owns
+    PROJECTS ||--o{ PROJECT_TASKS : contains
 ```
 
-> **Note:** The `ProjectTasks` entity in the diagram represents the `Tasks` database table (renamed to avoid Mermaid rendering conflicts).
+**Tables:** ASP.NET Identity, `Projects` (owner FK), `Tasks` (cascade from project). All entities inherit `BaseEntity` (audit + soft delete).
 
-### Tables
+**Migrations:** `dotnet ef database update --project TMS.Infrastruture --startup-project TMS.API`
 
-| Table | Description |
-|-------|-------------|
-| ASP.NET Identity tables | `AspNetUsers`, `AspNetRoles`, `AspNetUserRoles`, etc. |
-| `Projects` | User-owned project containers |
-| `Tasks` | Tasks belonging to a project |
-
-### BaseEntity (shared audit model)
-
-All domain entities inherit from `BaseEntity`:
-
-| Field | Purpose |
-|-------|---------|
-| `Id` | GUID primary key |
-| `CreatedAt`, `CreatedBy` | Creation audit |
-| `UpdatedAt`, `UpdatedBy` | Last update audit |
-| `IsDeleted`, `DeletedAt`, `DeletedBy` | Soft delete |
-
-### Relationships and delete behavior
-
-| Relationship | FK | On delete |
-|--------------|-----|-----------|
-| `Project.Owner` → `ApplicationUser` | `OwnerId` | `Restrict` |
-| `Task.Project` → `Project` | `ProjectId` | `Cascade` |
-
-### EF Core configurations
-
-Fluent API configurations in `TMS.Infrastruture/Configurations/`:
-
-- `ProjectConfiguration` — owner FK, task collection with field-backed navigation
-- `TaskConfiguration` — title/description length, status/priority required
-- `ApplicationUserConfiguration` — custom user fields
-- `IdentityRoleConfiguration` — seeds `Admin` and `User` roles
-
-### Migrations
-
-| Migration | Purpose |
-|-----------|---------|
-| `20260625231135_Init` | Identity + Projects + Tasks schema |
-| `20260626005715_SeedRoles` | Seed Admin and User roles |
-| `20260626112536_AddProjectOwnerId` | Add `OwnerId` FK on Projects |
-
-### Connection string
-
-Set `ConnectionStrings:TMS` in `TMS.API/appsettings.json` (default: local SQL Server, database name `TMS`, Windows authentication).
-
-Apply migrations:
-
-`dotnet ef database update --project TMS.Infrastruture --startup-project TMS.API`
+Connection string: `ConnectionStrings:TMS` in `appsettings.json`.
 
 ---
 
 ## Maintainability
 
-Design choices that keep the codebase easy to extend:
+One file per use case, validator, and command. Interface-based DI, domain factory methods, `ServiceResult` for explicit failures, generic repo/service with feature extensions, CQRS folders, API versioning, soft delete, and AutoMapper `ConstructUsing` for record DTOs.
 
-| Practice | Benefit |
-|----------|-----------|
-| **One file per use case, validator, command** | Small, focused units; easy code review |
-| **Interface-based DI** | Swap implementations; testable |
-| **Domain factory methods** | Business invariants in one place (`Project.Create`, `Task.Create`) |
-| **ServiceResult pattern** | Explicit success/failure without exceptions for expected cases |
-| **Generic repository/service** | Reuse CRUD; extend only where needed (owner-scoped queries) |
-| **CQRS folder structure** | Clear separation of reads and writes |
-| **API versioning** | Add v2 controllers/actions without breaking v1 clients |
-| **Swagger per version** | Accurate docs as API evolves |
-| **Soft delete** | Recoverable data; audit trail preserved |
-| **AutoMapper ConstructUsing** | Reliable mapping for positional record DTOs |
-
-### Adding a new feature (checklist)
-
-1. Add or extend domain entity in `TMS.Domain`.
-2. Add EF configuration and migration if schema changes.
-3. Add DTOs in `TMS.Application/DTOs/{Feature}/`.
-4. Add validators (one file per request DTO).
-5. Add repository interface + implementation if custom queries needed.
-6. Add service interface + implementation.
-7. Add use cases (one file per operation).
-8. Add MediatR commands/queries under `Features/{Feature}/`.
-9. Register services and use cases in `DependencyInjection.cs`.
-10. Add controller inheriting `ApiControllerBase`.
-11. Verify in Swagger under `/api/v1/`.
+**New feature:** Domain → EF/migration → DTOs + validators → repository/service → use cases → MediatR → DI → controller → Swagger.
 
 ---
 
 ## Getting Started
 
-### Prerequisites
+**Prerequisites:** .NET 9 SDK, SQL Server, Visual Studio / VS Code / Rider.
 
-- [.NET 9 SDK](https://dotnet.microsoft.com/download)
-- SQL Server (LocalDB or full instance)
-- IDE: Visual Studio 2022+ or VS Code / Rider
+1. Set `ConnectionStrings:TMS` in `appsettings.json`.
+2. `dotnet ef database update --project TMS.Infrastruture --startup-project TMS.API`
+3. `dotnet run --project TMS.API` → Swagger at `/swagger`
+4. Register → Authorize with Bearer token → test Projects and Tasks endpoints.
 
-### Setup
-
-1. Clone the repository and open the solution in your IDE.
-2. Update `ConnectionStrings:TMS` in `TMS.API/appsettings.json` if needed, then run `dotnet ef database update --project TMS.Infrastruture --startup-project TMS.API`.
-3. Run the API with `dotnet run --project TMS.API` or F5 in Visual Studio.
-4. Open Swagger at `https://localhost:{port}/swagger` (development only).
-5. **Test the flow:** register → authorize with Bearer token → create project → create task → list by project → update status → delete.
-
-### Build tip
-
-If you see **"file is locked by TMS.API"** or **MSB3027** errors, stop the running debug session (Shift+F5) or end the `TMS.API` / `iisexpress` process before rebuilding.
+**Build tip:** Stop TMS.API / IIS Express if you get DLL lock (`MSB3027`) errors.
 
 ---
 
 ## Contact
 
-**Project Maintainer:** Ahmed Mahmoud
-
-| | |
-|---|---|
-| LinkedIn | [ahmed-mahmoud-951a5716b](https://www.linkedin.com/in/ahmed-mahmoud-951a5716b/) |
-| Email | [Ahmedmah1284@gmail.com](mailto:Ahmedmah1284@gmail.com) |
-| Mobile / WhatsApp | +20 1028207883 |
+**Ahmed Mahmoud** — [LinkedIn](https://www.linkedin.com/in/ahmed-mahmoud-951a5716b/) · [Ahmedmah1284@gmail.com](mailto:Ahmedmah1284@gmail.com) · +20 1028207883
 
 ---
 
