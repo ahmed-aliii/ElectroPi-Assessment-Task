@@ -2,11 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using StackExchange.Redis;
 using TMS.Application;
 using TMS.Domain;
 
@@ -31,6 +27,30 @@ namespace TMS.Infrastructure
             services.AddScoped<IUserRepository, UserRepository>();
             services.AddScoped<IProjectRepository, ProjectRepository>();
             services.AddScoped<ITaskRepository, TaskRepository>();
+            #endregion
+
+            #region Cache
+
+            var redisConnectionString = configuration["Redis:ConnectionString"];
+            if (string.IsNullOrWhiteSpace(redisConnectionString))
+            {
+                services.AddSingleton<ICacheService, NoOpCacheService>();
+            }
+            else
+            {
+                services.AddStackExchangeRedisCache(options =>
+                {
+                    options.ConfigurationOptions = ConfigurationOptions.Parse(redisConnectionString);
+                    options.ConfigurationOptions.AbortOnConnectFail = false;
+                    options.ConfigurationOptions.ConnectRetry = 1;
+                    options.ConfigurationOptions.ConnectTimeout = 500;
+                    options.ConfigurationOptions.SyncTimeout = 500;
+                    options.ConfigurationOptions.AsyncTimeout = 500;
+                    options.InstanceName = configuration["Redis:InstanceName"] ?? "TMS:";
+                });
+                services.AddSingleton<ICacheService, RedisCacheService>();
+            }
+
             #endregion
 
             #region Identity Services

@@ -290,6 +290,37 @@ One file per use case, validator, and command. Interface-based DI, domain factor
 
 ---
 
+## Redis Cache
+
+Redis is used as an optional read-through cache for owner-scoped project and task queries. SQL Server remains the source of truth; create, update, and delete use cases invalidate affected cache entries after successful writes.
+
+Run Redis locally with Docker:
+
+```powershell
+docker run --name tms-redis -p 6379:6379 -d redis:7-alpine
+```
+
+Default local configuration:
+
+```json
+"Redis": {
+  "ConnectionString": "localhost:6379",
+  "InstanceName": "TMS:",
+  "DefaultExpirationMinutes": 5,
+  "OperationTimeoutMilliseconds": 500
+}
+```
+
+For Docker or deployed environments, override the Redis connection string with an environment variable:
+
+```powershell
+Redis__ConnectionString="redis:6379"
+```
+
+If `Redis:ConnectionString` is empty, the app uses a no-op cache implementation and continues to run without Redis. If Redis is configured but unavailable, cache operations fail fast and the API falls back to SQL Server.
+
+---
+
 ## Testing
 
 All automated tests live under the top-level `tests` folder and mirror the production layers:

@@ -12,15 +12,18 @@ namespace TMS.Application
         private readonly IProjectService _projectService;
         private readonly ICurrentUserService _currentUserService;
         private readonly IMapper _mapper;
+        private readonly ICacheService _cacheService;
 
         public GetProjectsPagedUseCase(
             IProjectService projectService,
             ICurrentUserService currentUserService,
-            IMapper mapper)
+            IMapper mapper,
+            ICacheService cacheService)
         {
             _projectService = projectService;
             _currentUserService = currentUserService;
             _mapper = mapper;
+            _cacheService = cacheService;
         }
 
         public async System.Threading.Tasks.Task<ServiceResult<PagedResult<ProjectResponse>>> ExecuteAsync(GetProjectsPagedRequest request)
@@ -28,6 +31,11 @@ namespace TMS.Application
             var ownerId = _currentUserService.UserId;
             if (string.IsNullOrEmpty(ownerId))
                 return ServiceResult<PagedResult<ProjectResponse>>.Unauthorized();
+
+            var cacheKey = CacheKeys.ProjectsPaged(ownerId, request.PageNumber, request.PageSize);
+            var cachedProjects = await _cacheService.GetAsync<PagedResult<ProjectResponse>>(cacheKey);
+            if (cachedProjects is not null)
+                return ServiceResult<PagedResult<ProjectResponse>>.Ok(cachedProjects);
 
             var result = await _projectService.GetAllPagedAsync(
                 request.PageNumber,
@@ -44,6 +52,8 @@ namespace TMS.Application
                 PageSize = result.Data.PageSize,
                 TotalRecords = result.Data.TotalRecords
             };
+
+            await _cacheService.SetAsync(cacheKey, mapped, TimeSpan.FromMinutes(2));
 
             return ServiceResult<PagedResult<ProjectResponse>>.Ok(mapped);
         }

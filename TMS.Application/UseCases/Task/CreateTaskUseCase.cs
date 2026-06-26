@@ -14,17 +14,20 @@ namespace TMS.Application
         private readonly IProjectService _projectService;
         private readonly ICurrentUserService _currentUserService;
         private readonly IMapper _mapper;
+        private readonly ICacheService _cacheService;
 
         public CreateTaskUseCase(
             ITaskService taskService,
             IProjectService projectService,
             ICurrentUserService currentUserService,
-            IMapper mapper)
+            IMapper mapper,
+            ICacheService cacheService)
         {
             _taskService = taskService;
             _projectService = projectService;
             _currentUserService = currentUserService;
             _mapper = mapper;
+            _cacheService = cacheService;
         }
 
         public async System.Threading.Tasks.Task<ServiceResult<TaskResponse>> ExecuteAsync(CreateTaskRequest request)
@@ -49,6 +52,10 @@ namespace TMS.Application
             var result = await _taskService.CreateAsync(task);
             if (!result.Success || result.Data is null)
                 return ServiceResult<TaskResponse>.BadRequest(result.Messages);
+
+            await _cacheService.RemoveAsync(CacheKeys.TasksByProject(ownerId, request.ProjectId));
+            await _cacheService.RemoveAsync(CacheKeys.ProjectById(ownerId, request.ProjectId));
+            await _cacheService.RemoveByPrefixAsync(CacheKeys.ProjectsForUserPrefix(ownerId));
 
             return ServiceResult<TaskResponse>.Created(_mapper.Map<TaskResponse>(result.Data));
         }

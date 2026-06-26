@@ -172,8 +172,9 @@ public class UseCaseTests
         var projectService = new Mock<IProjectService>();
         var currentUser = new Mock<ICurrentUserService>();
         var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
         currentUser.Setup(service => service.UserId).Returns((string?)null);
-        var useCase = new CreateProjectUseCase(projectService.Object, currentUser.Object, mapper.Object);
+        var useCase = new CreateProjectUseCase(projectService.Object, currentUser.Object, mapper.Object, cache.Object);
 
         var result = await useCase.ExecuteAsync(new CreateProjectRequest("Project", null));
 
@@ -189,6 +190,7 @@ public class UseCaseTests
         var projectService = new Mock<IProjectService>();
         var currentUser = new Mock<ICurrentUserService>();
         var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
         currentUser.Setup(service => service.UserId).Returns(OwnerId);
         projectService
             .Setup(service => service.CreateAsync(It.IsAny<Project>()))
@@ -196,7 +198,7 @@ public class UseCaseTests
         mapper
             .Setup(service => service.Map<ProjectResponse>(It.IsAny<Project>()))
             .Returns(projectResponse);
-        var useCase = new CreateProjectUseCase(projectService.Object, currentUser.Object, mapper.Object);
+        var useCase = new CreateProjectUseCase(projectService.Object, currentUser.Object, mapper.Object, cache.Object);
 
         var result = await useCase.ExecuteAsync(new CreateProjectRequest("Project", null));
 
@@ -204,6 +206,7 @@ public class UseCaseTests
         result.StatusCode.Should().Be(HttpStatusCode.Created);
         result.Data.Should().Be(projectResponse);
         projectService.Verify(service => service.CreateAsync(It.Is<Project>(project => project.OwnerId == OwnerId)), Times.Once);
+        cache.Verify(service => service.RemoveByPrefixAsync(CacheKeys.ProjectsForUserPrefix(OwnerId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -213,17 +216,40 @@ public class UseCaseTests
         var projectService = new Mock<IProjectService>();
         var currentUser = new Mock<ICurrentUserService>();
         var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
         currentUser.Setup(service => service.UserId).Returns(OwnerId);
         projectService
             .Setup(service => service.GetByIdAndOwnerAsync(projectId, OwnerId))
             .ReturnsAsync(ServiceResult<Project>.NotFound("Project not found."));
-        var useCase = new GetProjectByIdUseCase(projectService.Object, currentUser.Object, mapper.Object);
+        var useCase = new GetProjectByIdUseCase(projectService.Object, currentUser.Object, mapper.Object, cache.Object);
 
         var result = await useCase.ExecuteAsync(projectId);
 
         result.Success.Should().BeFalse();
         result.StatusCode.Should().Be(HttpStatusCode.NotFound);
         mapper.Verify(service => service.Map<ProjectResponse>(It.IsAny<Project>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetProjectByIdUseCase_WhenCacheHasValue_ReturnsCachedProjectWithoutQueryingService()
+    {
+        var projectId = Guid.NewGuid();
+        var cachedProject = new ProjectResponse(projectId, "Cached Project", null, DateTime.UtcNow, null, 0);
+        var projectService = new Mock<IProjectService>();
+        var currentUser = new Mock<ICurrentUserService>();
+        var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
+        currentUser.Setup(service => service.UserId).Returns(OwnerId);
+        cache
+            .Setup(service => service.GetAsync<ProjectResponse>(CacheKeys.ProjectById(OwnerId, projectId), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cachedProject);
+        var useCase = new GetProjectByIdUseCase(projectService.Object, currentUser.Object, mapper.Object, cache.Object);
+
+        var result = await useCase.ExecuteAsync(projectId);
+
+        result.Success.Should().BeTrue();
+        result.Data.Should().Be(cachedProject);
+        projectService.Verify(service => service.GetByIdAndOwnerAsync(It.IsAny<Guid>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -234,6 +260,7 @@ public class UseCaseTests
         var projectService = new Mock<IProjectService>();
         var currentUser = new Mock<ICurrentUserService>();
         var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
         currentUser.Setup(service => service.UserId).Returns(OwnerId);
         projectService
             .Setup(service => service.GetTrackedByIdAndOwnerAsync(project.Id, OwnerId))
@@ -244,7 +271,7 @@ public class UseCaseTests
         mapper
             .Setup(service => service.Map<ProjectResponse>(project))
             .Returns(projectResponse);
-        var useCase = new DeleteProjectUseCase(projectService.Object, currentUser.Object, mapper.Object);
+        var useCase = new DeleteProjectUseCase(projectService.Object, currentUser.Object, mapper.Object, cache.Object);
 
         var result = await useCase.ExecuteAsync(project.Id);
 
@@ -252,6 +279,9 @@ public class UseCaseTests
         project.IsDeleted.Should().BeTrue();
         project.DeletedBy.Should().Be(Guid.Parse(OwnerId));
         projectService.Verify(service => service.UpdateAsync(project), Times.Once);
+        cache.Verify(service => service.RemoveAsync(CacheKeys.ProjectById(OwnerId, project.Id), It.IsAny<CancellationToken>()), Times.Once);
+        cache.Verify(service => service.RemoveAsync(CacheKeys.TasksByProject(OwnerId, project.Id), It.IsAny<CancellationToken>()), Times.Once);
+        cache.Verify(service => service.RemoveByPrefixAsync(CacheKeys.ProjectsForUserPrefix(OwnerId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -269,6 +299,7 @@ public class UseCaseTests
         var projectService = new Mock<IProjectService>();
         var currentUser = new Mock<ICurrentUserService>();
         var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
         currentUser.Setup(service => service.UserId).Returns(OwnerId);
         projectService
             .Setup(service => service.GetAllPagedAsync(
@@ -280,7 +311,7 @@ public class UseCaseTests
         mapper
             .Setup(service => service.Map<IEnumerable<ProjectResponse>>(pagedProjects.Items))
             .Returns([mappedPageItem]);
-        var useCase = new GetProjectsPagedUseCase(projectService.Object, currentUser.Object, mapper.Object);
+        var useCase = new GetProjectsPagedUseCase(projectService.Object, currentUser.Object, mapper.Object, cache.Object);
 
         var result = await useCase.ExecuteAsync(new GetProjectsPagedRequest(1, 10));
 
@@ -288,6 +319,42 @@ public class UseCaseTests
         result.Data.Should().NotBeNull();
         result.Data!.Items.Should().ContainSingle().Which.Should().Be(mappedPageItem);
         result.Data.TotalRecords.Should().Be(1);
+        cache.Verify(service => service.SetAsync(
+            CacheKeys.ProjectsPaged(OwnerId, 1, 10),
+            It.IsAny<PagedResult<ProjectResponse>>(),
+            TimeSpan.FromMinutes(2),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetProjectsPagedUseCase_WhenCacheHasValue_ReturnsCachedPageWithoutQueryingService()
+    {
+        var cachedPage = new PagedResult<ProjectResponse>
+        {
+            Items = [new ProjectResponse(Guid.NewGuid(), "Cached", null, DateTime.UtcNow, null, 0)],
+            PageNumber = 1,
+            PageSize = 10,
+            TotalRecords = 1
+        };
+        var projectService = new Mock<IProjectService>();
+        var currentUser = new Mock<ICurrentUserService>();
+        var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
+        currentUser.Setup(service => service.UserId).Returns(OwnerId);
+        cache
+            .Setup(service => service.GetAsync<PagedResult<ProjectResponse>>(CacheKeys.ProjectsPaged(OwnerId, 1, 10), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cachedPage);
+        var useCase = new GetProjectsPagedUseCase(projectService.Object, currentUser.Object, mapper.Object, cache.Object);
+
+        var result = await useCase.ExecuteAsync(new GetProjectsPagedRequest(1, 10));
+
+        result.Success.Should().BeTrue();
+        result.Data.Should().Be(cachedPage);
+        projectService.Verify(service => service.GetAllPagedAsync(
+            It.IsAny<int>(),
+            It.IsAny<int>(),
+            It.IsAny<Expression<Func<Project, bool>>>(),
+            It.IsAny<Expression<Func<Project, object>>[]>()), Times.Never);
     }
 
     [Fact]
@@ -298,6 +365,7 @@ public class UseCaseTests
         var projectService = new Mock<IProjectService>();
         var currentUser = new Mock<ICurrentUserService>();
         var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
         currentUser.Setup(service => service.UserId).Returns(OwnerId);
         projectService
             .Setup(service => service.GetTrackedByIdAndOwnerAsync(project.Id, OwnerId))
@@ -308,7 +376,7 @@ public class UseCaseTests
         mapper
             .Setup(service => service.Map<ProjectResponse>(project))
             .Returns(response);
-        var useCase = new UpdateProjectUseCase(projectService.Object, currentUser.Object, mapper.Object);
+        var useCase = new UpdateProjectUseCase(projectService.Object, currentUser.Object, mapper.Object, cache.Object);
 
         var result = await useCase.ExecuteAsync(project.Id, new UpdateProjectRequest("New", "Updated"));
 
@@ -317,6 +385,8 @@ public class UseCaseTests
         project.Description.Should().Be("Updated");
         project.UpdatedBy.Should().Be(Guid.Parse(OwnerId));
         result.Data.Should().Be(response);
+        cache.Verify(service => service.RemoveAsync(CacheKeys.ProjectById(OwnerId, project.Id), It.IsAny<CancellationToken>()), Times.Once);
+        cache.Verify(service => service.RemoveByPrefixAsync(CacheKeys.ProjectsForUserPrefix(OwnerId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -327,11 +397,12 @@ public class UseCaseTests
         var projectService = new Mock<IProjectService>();
         var currentUser = new Mock<ICurrentUserService>();
         var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
         currentUser.Setup(service => service.UserId).Returns(OwnerId);
         projectService
             .Setup(service => service.GetByIdAndOwnerAsync(request.ProjectId, OwnerId))
             .ReturnsAsync(ServiceResult<Project>.NotFound("Project not found."));
-        var useCase = new CreateTaskUseCase(taskService.Object, projectService.Object, currentUser.Object, mapper.Object);
+        var useCase = new CreateTaskUseCase(taskService.Object, projectService.Object, currentUser.Object, mapper.Object, cache.Object);
 
         var result = await useCase.ExecuteAsync(request);
 
@@ -349,6 +420,7 @@ public class UseCaseTests
         var projectService = new Mock<IProjectService>();
         var currentUser = new Mock<ICurrentUserService>();
         var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
         currentUser.Setup(service => service.UserId).Returns(OwnerId);
         projectService
             .Setup(service => service.GetByIdAndOwnerAsync(project.Id, OwnerId))
@@ -359,7 +431,7 @@ public class UseCaseTests
         mapper
             .Setup(service => service.Map<TaskResponse>(It.IsAny<DomainTask>()))
             .Returns(taskResponse);
-        var useCase = new CreateTaskUseCase(taskService.Object, projectService.Object, currentUser.Object, mapper.Object);
+        var useCase = new CreateTaskUseCase(taskService.Object, projectService.Object, currentUser.Object, mapper.Object, cache.Object);
 
         var result = await useCase.ExecuteAsync(new CreateTaskRequest(project.Id, "Task", null));
 
@@ -367,6 +439,9 @@ public class UseCaseTests
         result.StatusCode.Should().Be(HttpStatusCode.Created);
         result.Data.Should().Be(taskResponse);
         taskService.Verify(service => service.CreateAsync(It.Is<DomainTask>(task => task.ProjectId == project.Id)), Times.Once);
+        cache.Verify(service => service.RemoveAsync(CacheKeys.TasksByProject(OwnerId, project.Id), It.IsAny<CancellationToken>()), Times.Once);
+        cache.Verify(service => service.RemoveAsync(CacheKeys.ProjectById(OwnerId, project.Id), It.IsAny<CancellationToken>()), Times.Once);
+        cache.Verify(service => service.RemoveByPrefixAsync(CacheKeys.ProjectsForUserPrefix(OwnerId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -377,6 +452,7 @@ public class UseCaseTests
         var taskService = new Mock<ITaskService>();
         var currentUser = new Mock<ICurrentUserService>();
         var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
         currentUser.Setup(service => service.UserId).Returns(OwnerId);
         taskService
             .Setup(service => service.GetTrackedByIdAndOwnerAsync(task.Id, OwnerId))
@@ -387,7 +463,7 @@ public class UseCaseTests
         mapper
             .Setup(service => service.Map<TaskResponse>(task))
             .Returns(taskResponse);
-        var useCase = new UpdateTaskStatusUseCase(taskService.Object, currentUser.Object, mapper.Object);
+        var useCase = new UpdateTaskStatusUseCase(taskService.Object, currentUser.Object, mapper.Object, cache.Object);
 
         var result = await useCase.ExecuteAsync(task.Id, new UpdateTaskStatusRequest(DomainTaskStatus.Done));
 
@@ -395,6 +471,7 @@ public class UseCaseTests
         result.StatusCode.Should().Be(HttpStatusCode.OK);
         task.Status.Should().Be(DomainTaskStatus.Done);
         task.UpdatedBy.Should().Be(Guid.Parse(OwnerId));
+        cache.Verify(service => service.RemoveAsync(CacheKeys.TasksByProject(OwnerId, task.ProjectId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -406,6 +483,7 @@ public class UseCaseTests
         var taskService = new Mock<ITaskService>();
         var currentUser = new Mock<ICurrentUserService>();
         var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
         currentUser.Setup(service => service.UserId).Returns(OwnerId);
         taskService
             .Setup(service => service.GetByProjectIdAndOwnerAsync(projectId, OwnerId))
@@ -413,12 +491,42 @@ public class UseCaseTests
         mapper
             .Setup(service => service.Map<IReadOnlyList<TaskResponse>>(It.Is<IReadOnlyList<DomainTask>>(tasks => tasks.Single() == task)))
             .Returns([response]);
-        var useCase = new GetTasksByProjectUseCase(taskService.Object, currentUser.Object, mapper.Object);
+        var useCase = new GetTasksByProjectUseCase(taskService.Object, currentUser.Object, mapper.Object, cache.Object);
 
         var result = await useCase.ExecuteAsync(projectId);
 
         result.Success.Should().BeTrue();
         result.Data.Should().ContainSingle().Which.Should().Be(response);
+        cache.Verify(service => service.SetAsync(
+            CacheKeys.TasksByProject(OwnerId, projectId),
+            It.IsAny<IReadOnlyList<TaskResponse>>(),
+            TimeSpan.FromMinutes(2),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetTasksByProjectUseCase_WhenCacheHasValue_ReturnsCachedTasksWithoutQueryingService()
+    {
+        var projectId = Guid.NewGuid();
+        IReadOnlyList<TaskResponse> cachedTasks =
+        [
+            new TaskResponse(Guid.NewGuid(), projectId, "Cached task", null, DomainTaskStatus.Todo, null, TaskPriority.Medium, DateTime.UtcNow, null)
+        ];
+        var taskService = new Mock<ITaskService>();
+        var currentUser = new Mock<ICurrentUserService>();
+        var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
+        currentUser.Setup(service => service.UserId).Returns(OwnerId);
+        cache
+            .Setup(service => service.GetAsync<IReadOnlyList<TaskResponse>>(CacheKeys.TasksByProject(OwnerId, projectId), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cachedTasks);
+        var useCase = new GetTasksByProjectUseCase(taskService.Object, currentUser.Object, mapper.Object, cache.Object);
+
+        var result = await useCase.ExecuteAsync(projectId);
+
+        result.Success.Should().BeTrue();
+        result.Data.Should().BeSameAs(cachedTasks);
+        taskService.Verify(service => service.GetByProjectIdAndOwnerAsync(It.IsAny<Guid>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -429,6 +537,7 @@ public class UseCaseTests
         var taskService = new Mock<ITaskService>();
         var currentUser = new Mock<ICurrentUserService>();
         var mapper = new Mock<IMapper>();
+        var cache = new Mock<ICacheService>();
         currentUser.Setup(service => service.UserId).Returns(OwnerId);
         taskService
             .Setup(service => service.GetTrackedByIdAndOwnerAsync(task.Id, OwnerId))
@@ -439,7 +548,7 @@ public class UseCaseTests
         mapper
             .Setup(service => service.Map<TaskResponse>(task))
             .Returns(response);
-        var useCase = new DeleteTaskUseCase(taskService.Object, currentUser.Object, mapper.Object);
+        var useCase = new DeleteTaskUseCase(taskService.Object, currentUser.Object, mapper.Object, cache.Object);
 
         var result = await useCase.ExecuteAsync(task.Id);
 
@@ -447,6 +556,9 @@ public class UseCaseTests
         task.IsDeleted.Should().BeTrue();
         task.DeletedBy.Should().Be(Guid.Parse(OwnerId));
         taskService.Verify(service => service.UpdateAsync(task), Times.Once);
+        cache.Verify(service => service.RemoveAsync(CacheKeys.TasksByProject(OwnerId, task.ProjectId), It.IsAny<CancellationToken>()), Times.Once);
+        cache.Verify(service => service.RemoveAsync(CacheKeys.ProjectById(OwnerId, task.ProjectId), It.IsAny<CancellationToken>()), Times.Once);
+        cache.Verify(service => service.RemoveByPrefixAsync(CacheKeys.ProjectsForUserPrefix(OwnerId), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static AuthResponse CreateAuthResponse(ApplicationUser user) =>

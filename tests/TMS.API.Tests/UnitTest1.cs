@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TMS.API;
 using TMS.Application;
@@ -157,6 +158,13 @@ public class ApiTests : IClassFixture<ApiTests.TestApplicationFactory>
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
+            builder.ConfigureAppConfiguration((_, configuration) =>
+            {
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Redis:ConnectionString"] = string.Empty
+                });
+            });
             builder.ConfigureServices(services =>
             {
                 var dbContextDescriptors = services
